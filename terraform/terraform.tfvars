@@ -1,6 +1,7 @@
 domain_name  = "brightstaraid.org"
 use_route53  = true
 alb_hostname = "k8s-banking-bankingi-c50d516e9e-888771560.eu-west-1.elb.amazonaws.com"
+github_repo  = "josephakeni/globalBankingApp"
 
 # main_vpc (vpc-0a0927aa04df49de2, 10.0.0.0/16)
 private_subnet_ids = [
