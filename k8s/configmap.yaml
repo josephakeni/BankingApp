@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banking-config
+  namespace: banking
+data:
+  DATABASE_URL: "postgresql://bankuser:q5SGMkczBFrCJsPNjBnEsVtETxhua3gH@postgres-service:5432/bankingdb"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres-service:5432/bankingdb"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  # Update FRONTEND_ORIGIN to your domain name after TLS is configured.
+  # If using Route53: set to https://your-domain.com
+  # If using the raw ALB hostname: set to https://<alb-hostname>
+  FRONTEND_ORIGIN: "https://brightstaraid.org"

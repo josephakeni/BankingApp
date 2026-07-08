@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'eu-west-1' }}.amazonaws.com
+  IMAGE_PREFIX: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'eu-west-1' }}.amazonaws.com/techbleat
+
+jobs:
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test-transaction-service:
+    name: Test transaction-service (Java)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+          cache: maven
+
+      - name: Run tests
+        working-directory: techbleat-global-bank-backend/transaction-service
+        run: mvn test --no-transfer-progress
+
+  test-frontend:
+    name: Test frontend (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: techbleat-global-bank-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: techbleat-global-bank-frontend
+        run: npm ci
+
+      - name: Build (lint + compile check)
+        working-directory: techbleat-global-bank-frontend
+        run: npm run build
+
+  # ── Build & Push to ECR ───────────────────────────────────────────────────
+  build-backend:
+    name: Build ${{ matrix.service }}
+    needs: [test-transaction-service, test-frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: user-service
+            context: ./techbleat-global-bank-backend/user-service
+          - service: activity-service
+            context: ./techbleat-global-bank-backend/activity-service
+          - service: transaction-service
+            context: ./techbleat-global-bank-backend/transaction-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  build-frontend:
+    name: Build frontend
+    needs: [test-transaction-service, test-frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./techbleat-global-bank-frontend
+          push: ${{ github.ref == 'refs/heads/main' }}
+          # ALB_URL repo variable: the ALB hostname returned by the ingress.
+          # Get it with: kubectl get ingress banking-ingress -n banking \
+          #   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+          build-args: |
+            VITE_USER_API=https://brightstaraid.org
+            VITE_TX_API=https://brightstaraid.org
+            VITE_ACTIVITY_API=https://brightstaraid.org
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # ── Deploy to EKS ─────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EKS
+    needs: [build-backend, build-frontend]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ vars.EKS_CLUSTER_NAME }}
+
+      - name: Update image tags
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          kubectl set image deployment/user-service \
+            user-service=${{ env.IMAGE_PREFIX }}/user-service:$TAG \
+            -n banking
+          kubectl set image deployment/transaction-service \
+            transaction-service=${{ env.IMAGE_PREFIX }}/transaction-service:$TAG \
+            -n banking
+          kubectl set image deployment/activity-service \
+            activity-service=${{ env.IMAGE_PREFIX }}/activity-service:$TAG \
+            -n banking
+          kubectl set image deployment/frontend \
+            frontend=${{ env.IMAGE_PREFIX }}/frontend:$TAG \
+            -n banking
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/user-service -n banking --timeout=300s
+          kubectl rollout status deployment/transaction-service -n banking --timeout=300s
+          kubectl rollout status deployment/activity-service -n banking --timeout=300s
+          kubectl rollout status deployment/frontend -n banking --timeout=300s

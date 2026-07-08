@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "aws": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "//c/Users/kenny/.aws:/tmp/awscreds:ro",
+        "-e",
+        "AWS_SHARED_CREDENTIALS_FILE=/tmp/awscreds/credentials",
+        "-e",
+        "AWS_CONFIG_FILE=/tmp/awscreds/config",
+        "-e",
+        "AWS_REGION=eu-west-1",
+        "-e",
+        "AWS_DEFAULT_REGION=eu-west-1",
+        "mcp/aws-api-mcp-server"
+      ],
+      "env": {}
+    },
+    "terraform": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "$PROJECT_PATH/BankingApp:/workspace",
+        "-v",
+        "//c/Users/kenny/.aws:/root/.aws:ro",
+        "-w",
+        "/workspace",
+        "hashicorp/terraform-mcp-server"
+      ],
+      "env": {}
+    }
+  }
+}
