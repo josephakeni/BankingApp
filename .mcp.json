@@ -29,7 +29,7 @@
         "-i",
         "--rm",
         "-v",
-        "$PROJECT_PATH/BankingApp:/workspace",
+        "C:/Users/kenny/Documents/projects/globalBankingApp:/workspace",
         "-v",
         "//c/Users/kenny/.aws:/root/.aws:ro",
         "-w",
