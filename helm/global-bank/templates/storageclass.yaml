@@ -1,0 +1,13 @@
+# gp3 is cheaper and faster than gp2 (same baseline IOPS, higher throughput at no extra cost).
+# The EBS CSI driver add-on must be installed before this StorageClass can provision volumes.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
