@@ -272,7 +272,7 @@ jobs:
               }]
             }"
 
-          # Persist the new ALB hostname as a GitHub variable for reference
-          gh variable set ALB_URL --body "$ALB"
+          # Persist the new ALB hostname as a GitHub variable for reference (best-effort)
+          gh variable set ALB_URL --body "$ALB" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
