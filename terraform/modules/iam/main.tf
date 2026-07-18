@@ -188,3 +188,25 @@ resource "aws_iam_role_policy_attachment" "github_eks" {
   role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.eks_describe.arn
 }
+
+# ACM read — needed by CI to look up the certificate ARN for ingress substitution
+data "aws_iam_policy_document" "acm_read" {
+  statement {
+    sid       = "ACMRead"
+    actions   = ["acm:ListCertificates", "acm:DescribeCertificate"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "acm_read" {
+  name        = "acm-read-${var.cluster_name}"
+  description = "Allows GitHub Actions CI to look up the ACM certificate ARN"
+  policy      = data.aws_iam_policy_document.acm_read.json
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "github_acm" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = aws_iam_policy.acm_read.arn
+}

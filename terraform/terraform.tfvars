@@ -1,7 +1,7 @@
 domain_name     = "brightstaraid.org"
 use_route53     = true
 alb_hostname    = "k8s-banking-bankingi-c50d516e9e-433031379.eu-west-1.elb.amazonaws.com"
-github_repo     = "josephakeni/globalBankingApp"
+github_repo     = "josephakeni/BankingApp"
 route53_zone_id = "Z01727102YQDKBTMK2K6H"
 db_username     = "bankuser"
 db_name         = "bankingdb"
