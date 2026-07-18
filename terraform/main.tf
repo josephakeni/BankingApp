@@ -1,5 +1,22 @@
 data "aws_caller_identity" "current" {}
 
+# ---------------------------------------------------------------------------
+# Helm provider — connects to the EKS cluster using AWS CLI token auth.
+# The exec command is evaluated lazily at apply time (not plan), so this
+# works on fresh deployments where the cluster doesn't exist yet.
+# ---------------------------------------------------------------------------
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", var.cluster_name, "--region", var.aws_region]
+    }
+  }
+}
+
 locals {
   tags = {
     Project     = "techbleat-banking"
@@ -70,6 +87,7 @@ module "iam" {
   github_repo          = var.github_repo
   ecr_repository_arns  = module.ecr.repository_arns
   secrets_manager_arns = [module.secrets.secret_arn]
+  route53_zone_id      = var.route53_zone_id
   tags                 = local.tags
 }
 
@@ -150,5 +168,74 @@ module "secrets" {
   source = "./modules/secrets"
 
   secret_name = var.db_secret_name
+  db_username = var.db_username
+  db_name     = var.db_name
   tags        = local.tags
+}
+
+# ---------------------------------------------------------------------------
+# AWS Load Balancer Controller — installed via Helm after EKS + IAM exist.
+# VPC ID and region are passed explicitly to avoid IMDS discovery failures.
+# ---------------------------------------------------------------------------
+resource "helm_release" "alb_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  version    = "1.13.2"
+
+  set {
+    name  = "clusterName"
+    value = module.eks.cluster_name
+  }
+  set {
+    name  = "region"
+    value = var.aws_region
+  }
+  set {
+    name  = "vpcId"
+    value = module.networking.vpc_id
+  }
+  set {
+    name  = "serviceAccount.create"
+    value = "true"
+  }
+  set {
+    name  = "serviceAccount.name"
+    value = "aws-load-balancer-controller"
+  }
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.iam.alb_controller_role_arn
+  }
+
+  depends_on = [module.eks, module.iam]
+}
+
+# ---------------------------------------------------------------------------
+# External Secrets Operator — installed via Helm after the ALB controller is
+# fully ready. ESO's install triggers the ALB controller's mutating webhook
+# (mservice.elbv2.k8s.aws), so the controller pods must be running first.
+# The ESO controller service account is annotated with the IRSA role so it
+# can authenticate to AWS Secrets Manager without explicit auth in the
+# ClusterSecretStore.
+# ---------------------------------------------------------------------------
+resource "helm_release" "external_secrets" {
+  name             = "external-secrets"
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  namespace        = "external-secrets"
+  version          = "0.18.2"
+  create_namespace = true
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.iam.external_secrets_role_arn
+  }
+
+  depends_on = [module.eks, module.iam, helm_release.alb_controller]
 }

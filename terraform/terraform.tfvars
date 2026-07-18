@@ -1,7 +1,12 @@
-domain_name  = "brightstaraid.org"
-use_route53  = true
-alb_hostname = "k8s-banking-bankingi-c50d516e9e-888771560.eu-west-1.elb.amazonaws.com"
-github_repo  = "josephakeni/globalBankingApp"
+domain_name     = "brightstaraid.org"
+use_route53     = true
+alb_hostname    = "k8s-banking-bankingi-c50d516e9e-433031379.eu-west-1.elb.amazonaws.com"
+github_repo     = "josephakeni/globalBankingApp"
+route53_zone_id = "Z01727102YQDKBTMK2K6H"
+db_username     = "bankuser"
+db_name         = "bankingdb"
+# The password is written to Secrets Manager by CI from the DB_PASSWORD GitHub secret.
+# Terraform never sees or stores the password value.
 
 # main_vpc (vpc-0a0927aa04df49de2, 10.0.0.0/16)
 private_subnet_ids = [

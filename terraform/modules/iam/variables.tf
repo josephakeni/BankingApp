@@ -29,6 +29,12 @@ variable "secrets_manager_arns" {
   default     = []
 }
 
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone ID — scopes the ChangeResourceRecordSets permission for the GitHub Actions role"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

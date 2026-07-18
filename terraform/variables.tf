@@ -79,3 +79,21 @@ variable "alb_hostname" {
   type        = string
   default     = ""
 }
+
+variable "db_username" {
+  description = "PostgreSQL username stored in Secrets Manager"
+  type        = string
+  default     = "bankuser"
+}
+
+variable "db_name" {
+  description = "PostgreSQL database name stored in Secrets Manager"
+  type        = string
+  default     = "bankingdb"
+}
+
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone ID for the domain — used by CI to update the ALB alias record"
+  type        = string
+  default     = ""
+}

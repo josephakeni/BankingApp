@@ -139,6 +139,34 @@ resource "aws_iam_role_policy_attachment" "github_ecr" {
   policy_arn = aws_iam_policy.ecr_push.arn
 }
 
+# Route 53 — allows CI to update the ALB alias A record after ingress provisioning
+data "aws_iam_policy_document" "route53_update" {
+  statement {
+    sid       = "Route53ChangeRecords"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+  }
+
+  statement {
+    sid       = "Route53GetChange"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:aws:route53:::change/*"]
+  }
+}
+
+resource "aws_iam_policy" "route53_update" {
+  name        = "route53-update-${var.cluster_name}"
+  description = "Allows GitHub Actions CI to update the ALB alias A record in Route 53"
+  policy      = data.aws_iam_policy_document.route53_update.json
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "github_route53" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = aws_iam_policy.route53_update.arn
+}
+
 # EKS describe — needed for aws eks update-kubeconfig in CI
 data "aws_iam_policy_document" "eks_describe" {
   statement {

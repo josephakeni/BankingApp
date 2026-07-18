@@ -51,3 +51,8 @@ output "nat_public_ips" {
   description = "Elastic IPs of the NAT Gateways — whitelist these at any external services that restrict by IP"
   value       = module.nat.nat_public_ips
 }
+
+output "route53_zone_id" {
+  description = "Route 53 hosted zone ID — used by CI to update the ALB alias record after ingress provisioning"
+  value       = var.route53_zone_id
+}

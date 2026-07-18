@@ -268,3 +268,21 @@ Requires Java 17+ and Maven installed locally. Infrastructure (PostgreSQL, Redis
 ## CORS
 
 All services are configured to accept cross-origin requests from `http://localhost:3000` and `http://127.0.0.1:3000` to support the companion React frontend.
+
+---
+What to do when not using the cluster
+
+Destroy just the expensive resources with targeted destroys — keep everything else:
+
+# Destroy the ALB first (via kubectl)
+kubectl delete ingress banking-ingress -n banking
+
+# Destroy EKS nodes, cluster, and NAT gateways via Terraform
+terraform destroy \
+  -target=module.eks \
+  -target=module.nat \
+  -target=aws_eks_addon.ebs_csi \
+  -target=aws_eks_access_entry.github_actions \
+  -target=aws_eks_access_policy_association.github_actions_edit \
+  -target=helm_release.alb_controller \
+  -target=helm_release.external_secrets

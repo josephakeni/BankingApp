@@ -6,16 +6,17 @@ resource "aws_secretsmanager_secret" "banking_db" {
   tags = var.tags
 }
 
-# Placeholder value — overwrite with real credentials using the CLI command in CLAUDE.md
-# before applying k8s manifests. The ignore_changes lifecycle prevents Terraform from
-# reverting manual secret updates.
-resource "aws_secretsmanager_secret_version" "placeholder" {
+# Terraform creates the secret shell only. The actual credentials are written
+# by CI via `aws secretsmanager put-secret-value` using the DB_PASSWORD GitHub
+# secret. The ignore_changes lifecycle prevents Terraform from ever overwriting
+# or reading back the real value, so the password is never in Terraform state.
+resource "aws_secretsmanager_secret_version" "banking_db" {
   secret_id = aws_secretsmanager_secret.banking_db.id
 
   secret_string = jsonencode({
-    "postgres-username" = "bankuser"
-    "postgres-password" = "REPLACE_BEFORE_USE"
-    "postgres-db"       = "bankingdb"
+    "postgres-username" = var.db_username
+    "postgres-password" = "REPLACE_BY_CI"
+    "postgres-db"       = var.db_name
   })
 
   lifecycle {
