@@ -1,0 +1,109 @@
+ingress:
+  host: brightstaraid.org
+  certificateArn: ""   # fill in: terraform -chdir=terraform output -raw certificate_arn
+
+configmap:
+  databaseUrl: "postgresql://bankuser:q5SGMkczBFrCJsPNjBnEsVtETxhua3gH@postgres-service:5432/bankingdb"
+  springDatasourceUrl: "jdbc:postgresql://postgres-service:5432/bankingdb"
+  kafkaBootstrapServers: "kafka-service:9092"
+  redisHost: "redis-service"
+  redisPort: "6379"
+  frontendOrigin: "https://brightstaraid.org"
+
+frontend:
+  replicas: 2
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/frontend
+    tag: latest
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+userService:
+  replicas: 2
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/user-service
+    tag: latest
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+transactionService:
+  replicas: 2
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/transaction-service
+    tag: latest
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+activityService:
+  replicas: 2
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/activity-service
+    tag: latest
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+postgres:
+  image:
+    repository: postgres
+    tag: "15"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  storage: 10Gi
+
+redis:
+  image:
+    repository: redis
+    tag: "7-alpine"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  storage: 2Gi
+
+kafka:
+  image:
+    repository: confluentinc/cp-kafka
+    tag: "7.4.6"
+  # Stable base64-encoded UUID — regenerate only if the PVC is wiped
+  clusterId: "MkU3OEVBNTcwNTJENDM2Qk"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  storage: 10Gi
+
+externalSecrets:
+  region: eu-west-1
+  refreshInterval: 1h
+  awsSecretKey: banking/db-credentials

@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activity-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.activityService.replicas }}
+  selector:
+    matchLabels:
+      app: activity-service
+  template:
+    metadata:
+      labels:
+        app: activity-service
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres-service 5432; do echo waiting for postgres; sleep 2; done"]
+        - name: wait-for-kafka
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z kafka-service 9092; do echo waiting for kafka; sleep 2; done"]
+      containers:
+        - name: activity-service
+          image: "{{ .Values.activityService.image.repository }}:{{ .Values.activityService.image.tag }}"
+          resources:
+            requests:
+              cpu: {{ .Values.activityService.resources.requests.cpu | quote }}
+              memory: {{ .Values.activityService.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.activityService.resources.limits.cpu | quote }}
+              memory: {{ .Values.activityService.resources.limits.memory | quote }}
+          ports:
+            - containerPort: 8001
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DATABASE_URL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: FRONTEND_ORIGIN
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: FRONTEND_ORIGIN
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: activity-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: activity-service
+  ports:
+    - port: 8001

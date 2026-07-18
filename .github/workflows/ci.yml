@@ -167,82 +167,38 @@ jobs:
             --secret-id banking/db-credentials \
             --secret-string "{\"postgres-username\":\"bankuser\",\"postgres-password\":\"${{ secrets.DB_PASSWORD }}\",\"postgres-db\":\"bankingdb\"}"
 
-      # Resolve dynamic values from AWS so manifests need no hardcoded ARNs
-      - name: Export dynamic values
+      - name: Export certificate ARN
         run: |
           echo "CERTIFICATE_ARN=$(aws acm list-certificates \
             --region ${{ env.AWS_REGION }} \
             --query "CertificateSummaryList[?DomainName=='${{ env.DOMAIN }}'].CertificateArn" \
             --output text)" >> $GITHUB_ENV
 
-      # Apply all manifests in dependency order
-      - name: Apply namespace and storage
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      # Single command replaces all kubectl apply steps, kubectl set image,
+      # and rollout status waits. --atomic auto-rolls back on failure.
+      - name: Helm deploy
         run: |
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/storageclass.yaml
+          helm upgrade --install global-bank ./helm/global-bank \
+            --namespace banking \
+            --create-namespace \
+            --set ingress.certificateArn=${{ env.CERTIFICATE_ARN }} \
+            --set userService.image.tag=${{ github.sha }} \
+            --set transactionService.image.tag=${{ github.sha }} \
+            --set activityService.image.tag=${{ github.sha }} \
+            --set frontend.image.tag=${{ github.sha }} \
+            --atomic \
+            --timeout 5m
 
-      - name: Apply ConfigMap
-        run: kubectl apply -f k8s/configmap.yaml
-
-      - name: Create postgres-init-sql ConfigMap
-        run: |
-          kubectl create configmap postgres-init-sql \
-            --from-file=init.sql=techbleat-global-bank-backend/db-init/init.sql \
-            -n banking --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Apply External Secrets resources
-        run: |
-          kubectl apply -f k8s/external-secrets/cluster-secret-store.yaml
-          kubectl apply -f k8s/external-secrets/external-secret.yaml
-
-      - name: Wait for banking-secrets to sync
-        run: |
-          kubectl wait --for=condition=Ready externalsecret/banking-db-credentials \
-            -n banking --timeout=120s
-
-      - name: Apply infra services
-        run: |
-          kubectl apply -f k8s/infra/postgres.yaml
-          kubectl apply -f k8s/infra/redis.yaml
-          kubectl apply -f k8s/infra/kafka.yaml
-
-      - name: Apply app deployments
-        run: |
-          kubectl apply -f k8s/apps/user-service.yaml
-          kubectl apply -f k8s/apps/transaction-service.yaml
-          kubectl apply -f k8s/apps/activity-service.yaml
-          kubectl apply -f k8s/apps/frontend.yaml
-
-      - name: Apply Ingress (with cert ARN substituted)
-        run: envsubst < k8s/ingress.yaml | kubectl apply -f -
-
-      # Update image tags to the current commit SHA
-      - name: Update image tags
-        env:
-          TAG: ${{ github.sha }}
-        run: |
-          kubectl set image deployment/user-service \
-            user-service=${{ env.IMAGE_PREFIX }}/user-service:$TAG -n banking
-          kubectl set image deployment/transaction-service \
-            transaction-service=${{ env.IMAGE_PREFIX }}/transaction-service:$TAG -n banking
-          kubectl set image deployment/activity-service \
-            activity-service=${{ env.IMAGE_PREFIX }}/activity-service:$TAG -n banking
-          kubectl set image deployment/frontend \
-            frontend=${{ env.IMAGE_PREFIX }}/frontend:$TAG -n banking
-
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/user-service       -n banking --timeout=300s
-          kubectl rollout status deployment/transaction-service -n banking --timeout=300s
-          kubectl rollout status deployment/activity-service   -n banking --timeout=300s
-          kubectl rollout status deployment/frontend           -n banking --timeout=300s
-
-      # Wait for the ALB to be provisioned then update Route 53
+      # Wait for the ALB to be provisioned then update Route 53.
+      # Uses banking-ingress-frontend since it owns the ALB in the grouped setup.
       - name: Update Route 53 ALB alias record
         run: |
           echo "Waiting for ALB hostname from ingress..."
           for i in $(seq 1 20); do
-            ALB=$(kubectl get ingress banking-ingress -n banking \
+            ALB=$(kubectl get ingress banking-ingress-frontend -n banking \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
             [ -n "$ALB" ] && break
             echo "  attempt $i — not ready yet, retrying in 15s..."
