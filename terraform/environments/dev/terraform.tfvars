@@ -17,8 +17,8 @@ db_name        = "bankingdb"
 
 # Smaller node pool to reduce dev running costs
 node_instance_type = "t3.medium"
-node_desired_size  = 1
-node_min_size      = 1
+node_desired_size  = 2
+node_min_size      = 2
 node_max_size      = 2
 
 # Same VPC as prod — main_vpc (vpc-0a0927aa04df49de2, 10.0.0.0/16)
