@@ -223,8 +223,8 @@ jobs:
             --set transactionService.image.tag=${{ github.sha }} \
             --set activityService.image.tag=${{ github.sha }} \
             --set frontend.image.tag=${{ github.sha }} \
-            --atomic \
-            --timeout 5m
+            --rollback-on-failure \
+            --timeout 10m
 
       - name: Update Route 53 ALB alias record
         run: |
