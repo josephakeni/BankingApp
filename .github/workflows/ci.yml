@@ -166,7 +166,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -260,6 +259,5 @@ jobs:
               }]
             }"
 
-          gh variable set ALB_URL --body "$ALB" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
