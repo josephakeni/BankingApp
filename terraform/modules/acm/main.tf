@@ -10,12 +10,20 @@ resource "aws_acm_certificate" "banking" {
   tags = var.tags
 }
 
-# Automatic validation via Route 53 (only when use_route53 = true)
+# Automatic validation via Route 53 (only when use_route53 = true).
+# Zone lookup is skipped when route53_zone_id is supplied directly — required
+# for subdomains (e.g. dev.example.com) where the hosted zone is the apex.
 data "aws_route53_zone" "this" {
-  count = var.use_route53 ? 1 : 0
+  count = var.use_route53 && var.route53_zone_id == "" ? 1 : 0
 
   name         = var.domain_name
   private_zone = false
+}
+
+locals {
+  zone_id = var.use_route53 ? (
+    var.route53_zone_id != "" ? var.route53_zone_id : data.aws_route53_zone.this[0].zone_id
+  ) : ""
 }
 
 resource "aws_route53_record" "validation" {
@@ -27,7 +35,7 @@ resource "aws_route53_record" "validation" {
     }
   } : {}
 
-  zone_id         = data.aws_route53_zone.this[0].zone_id
+  zone_id         = local.zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
@@ -42,11 +50,11 @@ resource "aws_acm_certificate_validation" "banking" {
   validation_record_fqdns = [for r in aws_route53_record.validation : r.fqdn]
 }
 
-# Apex ALIAS record → ALB (created once the ALB hostname is known)
+# ALIAS record → ALB (created once the ALB hostname is known)
 resource "aws_route53_record" "apex_alb" {
   count = var.use_route53 && var.alb_hostname != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.this[0].zone_id
+  zone_id = local.zone_id
   name    = var.domain_name
   type    = "A"
 

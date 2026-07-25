@@ -1,0 +1,88 @@
+ingress:
+  host: dev.brightstaraid.org
+  # certificateArn injected at deploy time via --set ingress.certificateArn=...
+
+configmap:
+  frontendOrigin: "https://dev.brightstaraid.org"
+
+# Dev uses -dev ECR repositories and a single replica per service to reduce cost.
+frontend:
+  replicas: 1
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/frontend-dev
+  resources:
+    requests:
+      cpu: "25m"
+      memory: "32Mi"
+    limits:
+      cpu: "100m"
+      memory: "64Mi"
+
+userService:
+  replicas: 1
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/user-service-dev
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+transactionService:
+  replicas: 1
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/transaction-service-dev
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+activityService:
+  replicas: 1
+  image:
+    repository: 399839753928.dkr.ecr.eu-west-1.amazonaws.com/techbleat/activity-service-dev
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+postgres:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  storage: 5Gi
+
+redis:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  storage: 1Gi
+
+kafka:
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  storage: 5Gi
+
+externalSecrets:
+  awsSecretKey: banking/db-credentials-dev

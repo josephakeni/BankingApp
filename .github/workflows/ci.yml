@@ -2,16 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 env:
-  AWS_REGION:     ${{ vars.AWS_REGION || 'eu-west-1' }}
-  ECR_REGISTRY:   ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'eu-west-1' }}.amazonaws.com
-  IMAGE_PREFIX:   ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'eu-west-1' }}.amazonaws.com/techbleat
-  DOMAIN:         brightstaraid.org
+  AWS_REGION:   ${{ vars.AWS_REGION || 'eu-west-1' }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'eu-west-1' }}.amazonaws.com
 
 jobs:
   # ── Tests ─────────────────────────────────────────────────────────────────
@@ -52,6 +50,9 @@ jobs:
         run: npm run build
 
   # ── Build & Push to ECR ───────────────────────────────────────────────────
+  # Images are only pushed on branch pushes (not PRs).
+  # main  → techbleat/{service}:sha          (prod ECR repos)
+  # dev   → techbleat/{service}-dev:sha      (dev ECR repos)
   build-backend:
     name: Build ${{ matrix.service }}
     needs: [test-transaction-service, test-frontend]
@@ -75,27 +76,35 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Resolve image suffix
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "IMAGE_SUFFIX=" >> $GITHUB_ENV
+          else
+            echo "IMAGE_SUFFIX=-dev" >> $GITHUB_ENV
+          fi
+
       - name: Configure AWS credentials
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ github.ref == 'refs/heads/main' && secrets.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN_DEV }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name == 'push' }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+            ${{ env.ECR_REGISTRY }}/techbleat/${{ matrix.service }}${{ env.IMAGE_SUFFIX }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/techbleat/${{ matrix.service }}${{ env.IMAGE_SUFFIX }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}${{ env.IMAGE_SUFFIX }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}${{ env.IMAGE_SUFFIX }}
 
   build-frontend:
     name: Build frontend
@@ -109,39 +118,51 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Resolve environment config
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "IMAGE_SUFFIX=" >> $GITHUB_ENV
+            echo "DOMAIN=brightstaraid.org" >> $GITHUB_ENV
+          else
+            echo "IMAGE_SUFFIX=-dev" >> $GITHUB_ENV
+            echo "DOMAIN=dev.brightstaraid.org" >> $GITHUB_ENV
+          fi
+
       - name: Configure AWS credentials
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ github.ref == 'refs/heads/main' && secrets.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN_DEV }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
           context: ./techbleat-global-bank-frontend
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name == 'push' }}
           build-args: |
             VITE_USER_API=https://${{ env.DOMAIN }}
             VITE_TX_API=https://${{ env.DOMAIN }}
             VITE_ACTIVITY_API=https://${{ env.DOMAIN }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/frontend:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/frontend:latest
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+            ${{ env.ECR_REGISTRY }}/techbleat/frontend${{ env.IMAGE_SUFFIX }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/techbleat/frontend${{ env.IMAGE_SUFFIX }}:latest
+          cache-from: type=gha,scope=frontend${{ env.IMAGE_SUFFIX }}
+          cache-to: type=gha,mode=max,scope=frontend${{ env.IMAGE_SUFFIX }}
 
   # ── Deploy to EKS ─────────────────────────────────────────────────────────
+  # main → production environment (techbleat-banking cluster, brightstaraid.org)
+  # dev  → development environment (tb-banking-dev cluster, dev.brightstaraid.org)
   deploy:
-    name: Deploy to EKS
+    name: Deploy to EKS (${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }})
     needs: [build-backend, build-frontend]
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     permissions:
       id-token: write
       contents: read
@@ -149,22 +170,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve environment config
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "DOMAIN=brightstaraid.org"               >> $GITHUB_ENV
+            echo "IMAGE_SUFFIX="                          >> $GITHUB_ENV
+            echo "EKS_CLUSTER=techbleat-banking"          >> $GITHUB_ENV
+            echo "SECRET_ID=banking/db-credentials"       >> $GITHUB_ENV
+            echo "HELM_EXTRA_VALUES="                     >> $GITHUB_ENV
+          else
+            echo "DOMAIN=dev.brightstaraid.org"                           >> $GITHUB_ENV
+            echo "IMAGE_SUFFIX=-dev"                                      >> $GITHUB_ENV
+            echo "EKS_CLUSTER=tb-banking-dev"                             >> $GITHUB_ENV
+            echo "SECRET_ID=banking/db-credentials-dev"                   >> $GITHUB_ENV
+            echo "HELM_EXTRA_VALUES=-f ./helm/global-bank/values-dev.yaml" >> $GITHUB_ENV
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ vars.EKS_CLUSTER_NAME }}
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
 
-      # Write real credentials into Secrets Manager from the GitHub secret.
-      # Terraform only creates the secret shell; the value is owned by CI.
       - name: Populate Secrets Manager credentials
         run: |
           aws secretsmanager put-secret-value \
             --region ${{ env.AWS_REGION }} \
-            --secret-id banking/db-credentials \
+            --secret-id ${{ env.SECRET_ID }} \
             --secret-string "{\"postgres-username\":\"bankuser\",\"postgres-password\":\"${{ secrets.DB_PASSWORD }}\",\"postgres-db\":\"bankingdb\"}"
 
       - name: Export certificate ARN
@@ -177,23 +212,20 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      # Single command replaces all kubectl apply steps, kubectl set image,
-      # and rollout status waits. --atomic auto-rolls back on failure.
       - name: Helm deploy
         run: |
           helm upgrade --install global-bank ./helm/global-bank \
             --namespace banking \
             --create-namespace \
+            ${{ env.HELM_EXTRA_VALUES }} \
             --set ingress.certificateArn=${{ env.CERTIFICATE_ARN }} \
             --set userService.image.tag=${{ github.sha }} \
             --set transactionService.image.tag=${{ github.sha }} \
             --set activityService.image.tag=${{ github.sha }} \
             --set frontend.image.tag=${{ github.sha }} \
-            --atomic \
-            --timeout 5m
+            --rollback-on-failure \
+            --timeout 10m
 
-      # Wait for the ALB to be provisioned then update Route 53.
-      # Uses banking-ingress-frontend since it owns the ALB in the grouped setup.
       - name: Update Route 53 ALB alias record
         run: |
           echo "Waiting for ALB hostname from ingress..."
@@ -228,7 +260,6 @@ jobs:
               }]
             }"
 
-          # Persist the new ALB hostname as a GitHub variable for reference (best-effort)
           gh variable set ALB_URL --body "$ALB" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

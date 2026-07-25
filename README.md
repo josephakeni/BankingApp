@@ -274,10 +274,11 @@ What to do when not using the cluster
 
 Destroy just the expensive resources with targeted destroys — keep everything else:
 
-# Destroy the ALB first (via kubectl)
-kubectl delete ingress banking-ingress -n banking
+## Destroy the ALB first (via kubectl)
+helm uninstall global-bank -n banking
 
-# Destroy EKS nodes, cluster, and NAT gateways via Terraform
+## Destroy EKS nodes, cluster, and NAT gateways via Terraform
+```sh
 terraform destroy \
   -target=module.eks \
   -target=module.nat \
@@ -286,3 +287,4 @@ terraform destroy \
   -target=aws_eks_access_policy_association.github_actions_edit \
   -target=helm_release.alb_controller \
   -target=helm_release.external_secrets
+```
