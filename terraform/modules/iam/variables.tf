@@ -35,6 +35,12 @@ variable "route53_zone_id" {
   default     = ""
 }
 
+variable "create_github_oidc_provider" {
+  description = "Create the GitHub Actions OIDC provider. Set to false when another environment root has already created it in this AWS account; the existing provider is looked up via data source instead."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

@@ -20,3 +20,9 @@ variable "alb_hostname" {
   type        = string
   default     = ""
 }
+
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone ID. When provided, skips the zone name lookup — required when domain_name is a subdomain (e.g. dev.example.com) but the hosted zone is the apex (example.com)."
+  type        = string
+  default     = ""
+}
